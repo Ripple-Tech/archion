@@ -18,8 +18,10 @@ const COPY = {
 };
 
 // how tall the scroll-scrubbed wrapper is, in viewport heights.
-// more height means a slower, longer scrub before the reveal completes.
-const WRAPPER_VH = 320;
+// the extra height beyond 100vh is the only part that is actually
+// scrollable, so WRAPPER_VH - 100 is roughly how far the user scrolls
+// before the cover has fully lifted off.
+const WRAPPER_VH = 160;
 
 function easeInOutCubic(t: number) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -41,9 +43,9 @@ function useWindowSize() {
 }
 
 function usePeepSize(w: number) {
-  if (w >= 1024) return 440;
-  if (w >= 640) return 360;
-  return 280;
+  if (w >= 1024) return 300;
+  if (w >= 640) return 260;
+  return 200;
 }
 
 export default function PeepReveal() {
@@ -97,95 +99,101 @@ export default function PeepReveal() {
   const config: BlobConfig = { size: peepSize, radius: peepRadius };
   const path = blobPathAt(time, config);
 
-  // phase 1, the paragraph clears out early in the scrub
-  const textEase = easeInOutCubic(clamp01(progress / 0.32));
-  const textOpacity = 1 - textEase;
-  const textShift = textEase * -36;
+  // the whole cover, text and peep window together, lifts straight up
+  // and off the top of the screen as the user scrolls through the wrapper
+  const coverLift = easeInOutCubic(progress) * 100; // vh
+  // it also fades out in the last stretch so the edge disappears cleanly
+  // rather than hard-cutting off mid-frame
+  const coverOpacity = 1 - easeInOutCubic(clamp01((progress - 0.75) / 0.25));
 
-  // phase 2, the aperture opens over the middle of the scrub and finishes
-  // well before the wrapper runs out, so the full video holds for a beat
-  const openEase = easeInOutCubic(clamp01((progress - 0.28) / 0.6));
+  // the peep window gets a small amount of extra lift-off energy, a subtle
+  // grow, so it feels like it is the part actually being "peeled" away
+  const peepScale = 1 + 0.2 * easeInOutCubic(clamp01(progress / 0.6));
+
   const viewportW = w || 1600;
   const viewportH = h || 900;
-  const diagonal = Math.hypot(viewportW, viewportH);
-  const maxScale = (diagonal * 1.15) / peepSize;
-  const scale = 1 + (maxScale - 1) * openEase;
-
-  // the rim outline fades out as the window grows past being a "frame"
-  const ringOpacity = 1 - easeInOutCubic(clamp01((progress - 0.55) / 0.25));
-
-  const videoLeft = -((viewportW - peepSize) / 2);
-  const videoTop = -((viewportH - peepSize) / 2);
+  const peepVideoLeft = -((viewportW - peepSize) / 2);
+  const peepVideoTop = -((viewportH - peepSize) / 2);
 
   return (
     <section
       ref={setRefs}
-      className={`${display.variable} relative w-full bg-[#e6e6ea]`}
+      className={`${display.variable} relative w-full bg-[#14141a]`}
       style={{ height: `${WRAPPER_VH}vh` }}
     >
       <div className="sticky top-0 h-screen w-full overflow-hidden">
-        <div
-          className="absolute left-1/2 top-[30%] flex w-full max-w-xl -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-5 px-6 text-center"
-          style={{
-            transform: `translate(-50%, calc(-50% + ${textShift}px))`,
-            opacity: textOpacity,
-            pointerEvents: textOpacity < 0.05 ? "none" : "auto",
-          }}
-        >
-          <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-500">
-            {COPY.eyebrow}
-          </span>
-          <h2
-            className="text-2xl font-bold leading-tight text-[#14141a] md:text-4xl"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            {COPY.heading}
-          </h2>
-          <p className="max-w-sm text-sm leading-relaxed text-neutral-500">
-            {COPY.body}
-          </p>
-        </div>
+        {/* the video hero, playing full-bleed for the whole time, whether
+            or not the cover above it has lifted yet */}
+        <video
+          className="absolute inset-0 h-full w-full object-cover"
+          src="/hero.webm"
+          autoPlay
+          muted
+          loop
+          playsInline
+        />
 
+        {/* the cover: solid backdrop, paragraph, and the blob peep window,
+            all riding together as one layer that lifts off the video */}
         <div
-          className="absolute left-1/2 top-1/2"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-10 bg-[#e6e6ea] px-6"
           style={{
-            width: peepSize,
-            height: peepSize,
-            clipPath: `path('${path}')`,
-            transform: `translate(-50%, -50%) scale(${scale})`,
-            transformOrigin: "center",
-            willChange: "transform",
+            transform: `translateY(-${coverLift}vh)`,
+            opacity: coverOpacity,
+            pointerEvents: coverOpacity < 0.05 ? "none" : "auto",
           }}
         >
-          <video
-            className="absolute object-cover"
-            style={{
-              width: viewportW,
-              height: viewportH,
-              left: videoLeft,
-              top: videoTop,
-            }}
-            src="/hero.webm"
-            autoPlay
-            muted
-            loop
-            playsInline
-          />
-        </div>
+          <div className="flex max-w-xl flex-col items-center gap-5 text-center">
+            <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-500">
+              {COPY.eyebrow}
+            </span>
+            <h2
+              className="text-2xl font-bold leading-tight text-[#14141a] md:text-4xl"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {COPY.heading}
+            </h2>
+            <p className="max-w-sm text-sm leading-relaxed text-neutral-500">
+              {COPY.body}
+            </p>
+          </div>
 
-        <svg
-          className="pointer-events-none absolute left-1/2 top-1/2"
-          width={peepSize}
-          height={peepSize}
-          viewBox={`0 0 ${peepSize} ${peepSize}`}
-          style={{
-            transform: `translate(-50%, -50%) scale(${scale})`,
-            transformOrigin: "center",
-            opacity: ringOpacity,
-          }}
-        >
-          <path d={path} fill="none" stroke="#14141a" strokeWidth={2} />
-        </svg>
+          <div className="relative" style={{ width: peepSize, height: peepSize }}>
+            <div
+              className="absolute inset-0"
+              style={{
+                clipPath: `path('${path}')`,
+                transform: `scale(${peepScale})`,
+                transformOrigin: "center",
+                willChange: "transform",
+              }}
+            >
+              <video
+                className="absolute object-cover"
+                style={{
+                  width: viewportW,
+                  height: viewportH,
+                  left: peepVideoLeft,
+                  top: peepVideoTop,
+                }}
+                src="/hero.webm"
+                autoPlay
+                muted
+                loop
+                playsInline
+              />
+            </div>
+            <svg
+              className="pointer-events-none absolute inset-0"
+              width={peepSize}
+              height={peepSize}
+              viewBox={`0 0 ${peepSize} ${peepSize}`}
+              style={{ transform: `scale(${peepScale})`, transformOrigin: "center" }}
+            >
+              <path d={path} fill="none" stroke="#14141a" strokeWidth={2} />
+            </svg>
+          </div>
+        </div>
       </div>
     </section>
   );
