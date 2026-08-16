@@ -17,11 +17,15 @@ const COPY = {
   body: "Scroll and watch the aperture widen, the same shape our studio uses to prototype form, now framing the finished work in motion.",
 };
 
-// how tall the scroll-scrubbed wrapper is, in viewport heights.
-// the extra height beyond 100vh is the only part that is actually
-// scrollable, so WRAPPER_VH - 100 is roughly how far the user scrolls
-// before the cover has fully lifted off.
-const WRAPPER_VH = 160;
+// Increased scroll distance to slow down the lift animation overall
+const WRAPPER_VH = 280; 
+const PEEP_SIZE = 300;
+const PEEP_RADIUS = 100;
+
+// Quintic easing keeps the reveal pinned longer for an "unveiling" feel
+function unveilEase(t: number) {
+  return Math.pow(t, 2.8);
+}
 
 function easeInOutCubic(t: number) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -42,19 +46,18 @@ function useWindowSize() {
   return size;
 }
 
-function usePeepSize(w: number) {
-  if (w >= 1024) return 300;
-  if (w >= 640) return 260;
-  return 200;
+function useDisplayScale(w: number) {
+  if (w >= 1024) return 1;
+  if (w >= 640) return 0.85;
+  return 0.66;
 }
 
 export default function PeepReveal() {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [progress, setProgress] = useState(0);
   const [time, setTime] = useState(0);
-  const { w, h } = useWindowSize();
-  const peepSize = usePeepSize(w);
-  const peepRadius = peepSize * 0.42;
+  const { w } = useWindowSize();
+  const displayScale = useDisplayScale(w);
 
   const { ref: inViewRef, inView } = useInView({ threshold: 0, rootMargin: "0px" });
 
@@ -63,8 +66,6 @@ export default function PeepReveal() {
     inViewRef(node);
   };
 
-  // the blob keeps its own morph clock, but only while the section is
-  // anywhere near the viewport, so it is not spending frames off-screen.
   useEffect(() => {
     if (!inView) return;
     let frameId: number;
@@ -77,8 +78,6 @@ export default function PeepReveal() {
     return () => cancelAnimationFrame(frameId);
   }, [inView]);
 
-  // scroll-scrub progress, 0 at the top of the wrapper, 1 once it has
-  // scrolled through its own extra height. also only runs while in view.
   useEffect(() => {
     if (!inView) return;
     let frameId: number;
@@ -96,24 +95,16 @@ export default function PeepReveal() {
     return () => cancelAnimationFrame(frameId);
   }, [inView]);
 
-  const config: BlobConfig = { size: peepSize, radius: peepRadius };
+  const config: BlobConfig = { size: PEEP_SIZE, radius: PEEP_RADIUS };
   const path = blobPathAt(time, config);
 
-  // the whole cover, text and peep window together, lifts straight up
-  // and off the top of the screen as the user scrolls through the wrapper
-  const coverLift = easeInOutCubic(progress) * 100; // vh
-  // it also fades out in the last stretch so the edge disappears cleanly
-  // rather than hard-cutting off mid-frame
-  const coverOpacity = 1 - easeInOutCubic(clamp01((progress - 0.75) / 0.25));
-
-  // the peep window gets a small amount of extra lift-off energy, a subtle
-  // grow, so it feels like it is the part actually being "peeled" away
-  const peepScale = 1 + 0.2 * easeInOutCubic(clamp01(progress / 0.6));
-
-  const viewportW = w || 1600;
-  const viewportH = h || 900;
-  const peepVideoLeft = -((viewportW - peepSize) / 2);
-  const peepVideoTop = -((viewportH - peepSize) / 2);
+  // Slower, dramatic lift using unveilEase
+  const coverLift = unveilEase(progress) * 105;
+  // Smoothly fade out cover opacity near the end of the reveal sequence
+  const coverOpacity = 1 - easeInOutCubic(clamp01((progress - 0.70) / 0.30));
+  // Allow aperture window to grow slightly more during scroll
+  const liftGrow = 1 + 0.35 * easeInOutCubic(clamp01(progress / 0.7));
+  const peepScale = displayScale * liftGrow;
 
   return (
     <section
@@ -121,9 +112,17 @@ export default function PeepReveal() {
       className={`${display.variable} relative w-full bg-[#14141a]`}
       style={{ height: `${WRAPPER_VH}vh` }}
     >
+      {/* SVG Clip Definition */}
+      <svg className="absolute h-0 w-0 overflow-hidden" aria-hidden="true">
+        <defs>
+          <clipPath id="peep-blob-clip" clipPathUnits="userSpaceOnUse">
+            <path d={path} />
+          </clipPath>
+        </defs>
+      </svg>
+
       <div className="sticky top-0 h-screen w-full overflow-hidden">
-        {/* the video hero, playing full-bleed for the whole time, whether
-            or not the cover above it has lifted yet */}
+        {/* Full-screen playing video background */}
         <video
           className="absolute inset-0 h-full w-full object-cover"
           src="/hero.webm"
@@ -133,8 +132,7 @@ export default function PeepReveal() {
           playsInline
         />
 
-        {/* the cover: solid backdrop, paragraph, and the blob peep window,
-            all riding together as one layer that lifts off the video */}
+        {/* Cover layer that lifts away smoothly */}
         <div
           className="absolute inset-0 flex flex-col items-center justify-center gap-10 bg-[#e6e6ea] px-6"
           style={{
@@ -158,24 +156,27 @@ export default function PeepReveal() {
             </p>
           </div>
 
-          <div className="relative" style={{ width: peepSize, height: peepSize }}>
+          {/* Peep Window Container */}
+          <div
+            className="relative flex items-center justify-center overflow-hidden"
+            style={{
+              width: PEEP_SIZE,
+              height: PEEP_SIZE,
+              transform: `scale(${peepScale})`,
+              transformOrigin: "center",
+              willChange: "transform",
+            }}
+          >
+            {/* Clipped aperture showing video underneath */}
             <div
-              className="absolute inset-0"
+              className="absolute inset-0 h-full w-full"
               style={{
-                clipPath: `path('${path}')`,
-                transform: `scale(${peepScale})`,
-                transformOrigin: "center",
-                willChange: "transform",
+                clipPath: "url(#peep-blob-clip)",
+                WebkitClipPath: "url(#peep-blob-clip)",
               }}
             >
               <video
-                className="absolute object-cover"
-                style={{
-                  width: viewportW,
-                  height: viewportH,
-                  left: peepVideoLeft,
-                  top: peepVideoTop,
-                }}
+                className="h-full w-full object-cover"
                 src="/hero.webm"
                 autoPlay
                 muted
@@ -183,12 +184,11 @@ export default function PeepReveal() {
                 playsInline
               />
             </div>
+
+            {/* Contour stroke */}
             <svg
-              className="pointer-events-none absolute inset-0"
-              width={peepSize}
-              height={peepSize}
-              viewBox={`0 0 ${peepSize} ${peepSize}`}
-              style={{ transform: `scale(${peepScale})`, transformOrigin: "center" }}
+              className="pointer-events-none absolute inset-0 h-full w-full"
+              viewBox={`0 0 ${PEEP_SIZE} ${PEEP_SIZE}`}
             >
               <path d={path} fill="none" stroke="#14141a" strokeWidth={2} />
             </svg>
