@@ -12,19 +12,16 @@ const display = Space_Grotesk({
 });
 
 const COPY = {
-  eyebrow: "Beyond the drawings",
-  heading: "Every render starts as a promise. This is where it becomes a place.",
-  body: "Scroll and watch the aperture widen, the same shape our studio uses to prototype form, now framing the finished work in motion.",
-};
+  
+  heading: "We combine architecture and construction expertise to deliver world-class infrastructure project. From healthcare and education to civic and urban infrastructure, with decade of experience we handle every stage of the process. From design to construction, we handle every stage of the process, up to delivery.",
+ };
 
-// Increased scroll distance to slow down the lift animation overall
-const WRAPPER_VH = 280; 
+const WRAPPER_VH = 180;
 const PEEP_SIZE = 300;
 const PEEP_RADIUS = 100;
 
-// Quintic easing keeps the reveal pinned longer for an "unveiling" feel
-function unveilEase(t: number) {
-  return Math.pow(t, 2.8);
+function hookEase(t: number) {
+  return Math.pow(t, 1.8);
 }
 
 function easeInOutCubic(t: number) {
@@ -98,13 +95,13 @@ export default function PeepReveal() {
   const config: BlobConfig = { size: PEEP_SIZE, radius: PEEP_RADIUS };
   const path = blobPathAt(time, config);
 
-  // Slower, dramatic lift using unveilEase
-  const coverLift = unveilEase(progress) * 105;
-  // Smoothly fade out cover opacity near the end of the reveal sequence
-  const coverOpacity = 1 - easeInOutCubic(clamp01((progress - 0.70) / 0.30));
-  // Allow aperture window to grow slightly more during scroll
-  const liftGrow = 1 + 0.35 * easeInOutCubic(clamp01(progress / 0.7));
+  const coverLift = hookEase(progress) * 100;
+  const coverOpacity = 1 - easeInOutCubic(clamp01((progress - 0.75) / 0.25));
+  const liftGrow = 1 + 0.25 * easeInOutCubic(clamp01(progress / 0.6));
   const peepScale = displayScale * liftGrow;
+
+  // Window height fallback for SSR hydration
+  const screenHeight = typeof window !== "undefined" && window.innerHeight ? window.innerHeight : 800;
 
   return (
     <section
@@ -112,17 +109,8 @@ export default function PeepReveal() {
       className={`${display.variable} relative w-full bg-[#14141a]`}
       style={{ height: `${WRAPPER_VH}vh` }}
     >
-      {/* SVG Clip Definition */}
-      <svg className="absolute h-0 w-0 overflow-hidden" aria-hidden="true">
-        <defs>
-          <clipPath id="peep-blob-clip" clipPathUnits="userSpaceOnUse">
-            <path d={path} />
-          </clipPath>
-        </defs>
-      </svg>
-
       <div className="sticky top-0 h-screen w-full overflow-hidden">
-        {/* Full-screen playing video background */}
+        {/* 1. SINGLE HERO BACKGROUND VIDEO */}
         <video
           className="absolute inset-0 h-full w-full object-cover"
           src="/hero.webm"
@@ -132,67 +120,68 @@ export default function PeepReveal() {
           playsInline
         />
 
-        {/* Cover layer that lifts away smoothly */}
+        {/* 2. COVER LAYER SLIDING UPWARD ON SCROLL */}
         <div
-          className="absolute inset-0 flex flex-col items-center justify-center gap-10 bg-[#e6e6ea] px-6"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-10 px-6 pointer-events-auto"
           style={{
             transform: `translateY(-${coverLift}vh)`,
             opacity: coverOpacity,
             pointerEvents: coverOpacity < 0.05 ? "none" : "auto",
+            willChange: "transform, opacity",
           }}
         >
-          <div className="flex max-w-xl flex-col items-center gap-5 text-center">
-            <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-neutral-500">
-              {COPY.eyebrow}
-            </span>
-            <h2
-              className="text-2xl font-bold leading-tight text-[#14141a] md:text-4xl"
+          {/* MASKED BACKGROUND RECTANGLE (Punches hole directly through #e6e6ea cover) */}
+          <svg
+            className="absolute inset-0 h-full w-full pointer-events-none"
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <mask id="cover-aperture-mask" maskUnits="userSpaceOnUse">
+                {/* Opaque white fills the full screen cover */}
+                <rect width="100%" height="100%" fill="white" />
+
+                {/* Pure black shape punches a transparent hole in the exact viewport center */}
+                <g transform={`translate(${w / 2}, ${screenHeight / 2})`}>
+                  <g transform={`scale(${peepScale})`}>
+                    <g transform={`translate(-${PEEP_SIZE / 2}, -${PEEP_SIZE / 2})`}>
+                      <path d={path} fill="black" />
+                    </g>
+                  </g>
+                </g>
+              </mask>
+            </defs>
+
+            {/* The cover canvas color */}
+            <rect
+              width="100%"
+              height="100%"
+              fill="#e6e6ea"
+              mask="url(#cover-aperture-mask)"
+            />
+          </svg>
+
+          {/* 3. EDITORIAL TYPOGRAPHY */}
+          <div className="relative z-20 mb-10 flex max-w-xl flex-col items-center gap-5 text-center">
+            
+            <p
+              className="max-w-sm text-sm font-serif leading-relaxed text-neutral-700"
               style={{ fontFamily: "var(--font-display)" }}
             >
               {COPY.heading}
-            </h2>
-            <p className="max-w-sm text-sm leading-relaxed text-neutral-500">
-              {COPY.body}
             </p>
+           
           </div>
 
-          {/* Peep Window Container */}
+          {/* Spacer to maintain vertical balance for typography above the cutout */}
           <div
-            className="relative flex items-center justify-center overflow-hidden"
+            className="relative mt-4 z-20 pointer-events-none"
             style={{
               width: PEEP_SIZE,
               height: PEEP_SIZE,
               transform: `scale(${peepScale})`,
               transformOrigin: "center",
-              willChange: "transform",
             }}
-          >
-            {/* Clipped aperture showing video underneath */}
-            <div
-              className="absolute inset-0 h-full w-full"
-              style={{
-                clipPath: "url(#peep-blob-clip)",
-                WebkitClipPath: "url(#peep-blob-clip)",
-              }}
-            >
-              <video
-                className="h-full w-full object-cover"
-                src="/hero.webm"
-                autoPlay
-                muted
-                loop
-                playsInline
-              />
-            </div>
-
-            {/* Contour stroke */}
-            <svg
-              className="pointer-events-none absolute inset-0 h-full w-full"
-              viewBox={`0 0 ${PEEP_SIZE} ${PEEP_SIZE}`}
-            >
-              <path d={path} fill="none" stroke="#14141a" strokeWidth={2} />
-            </svg>
-          </div>
+          />
         </div>
       </div>
     </section>

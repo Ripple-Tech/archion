@@ -127,11 +127,11 @@ export default function ProjectsGrid() {
           </p>
         </div>
 
-        <div className="mt-12 grid grid-cols-1 gap-x-8 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
+        {/* <div className="mt-12 grid grid-cols-1 gap-x-8 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
           {PROJECTS.map((project, i) => (
             <ProjectCard key={project.title} project={project} seed={i * 1.7} />
           ))}
-        </div>
+        </div> */}
       </div>
     </section>
   );
